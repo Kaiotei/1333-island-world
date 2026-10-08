@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Island World</title>
+<meta name="description" content="A data-driven 3D portfolio / site map: your work as floating islands around a centerpiece, with an orbit camera, swipe navigation, a guided tour and a no-WebGL fallback.">
+<meta property="og:title" content="Island World">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#322036">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.185.1/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.185.1/examples/jsm/"
+  }
+}
+</script>
+<style>
+@font-face { font-family: 'basiic'; src: url(https://cinni.net/fonts/basiic.ttf); font-display: swap; }
+@font-face { font-family: '8bitfont'; src: url(https://hhroses.neocities.org/font/PixelatedEleganceRegular-ovyAA.woff2) format('woff2'); font-display: swap; }
+
+:root {
+  --ink: #322036;
+  --mauve: #96799c;
+  --purple: #9B6CD8;
+  --light: #c4a8e8;
+  --lighter: #e0ccf8;
+  --teal: #84c4c4;
+  --glass: rgba(50, 32, 54, 0.88);
+  --line: rgba(155, 108, 216, 0.55);
+  --display: basiic, 'MS UI Gothic', Arial, sans-serif;
+  --pixel: '8bitfont', 'MS UI Gothic', Arial, sans-serif;
+  --body: 'MS UI Gothic', Arial, sans-serif;
+  --gap: 16px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: radial-gradient(ellipse at 50% 40%, var(--lighter) 0%, var(--light) 75%);
+}
+body[data-biome="night"] {
+  background: radial-gradient(ellipse at 50% 60%, var(--mauve) 0%, var(--ink) 65%);
+  color: var(--lighter);
+  font: 15px/1.55 var(--body);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+a { color: inherit; }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+#world { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; outline: none; }
+
+/* ── top bar ── */
+.topbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: calc(env(safe-area-inset-top) + 12px) var(--gap) 12px;
+  background: linear-gradient(to bottom, rgba(50, 32, 54, 0.92), rgba(50, 32, 54, 0.85) 65%, rgba(50, 32, 54, 0));
+  pointer-events: none;
+}
+.topbar > * { pointer-events: auto; }
+.brand { display: flex; align-items: baseline; gap: 10px; text-decoration: none; white-space: nowrap; }
+.brand b { font: 22px var(--display); color: var(--lighter); letter-spacing: 0.06em; }
+.brand span { font: 12px var(--display); color: var(--teal); letter-spacing: 0.2em; }
+.actions { display: flex; gap: 8px; }
+.pill {
+  font: 13px var(--display); letter-spacing: 0.08em;
+  padding: 7px 14px; border-radius: 999px;
+  background: var(--glass); border: 1px solid var(--line); color: var(--lighter);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  transition: background 0.2s, color 0.2s;
+}
+.pill:hover { background: var(--mauve); color: #fff; }
+#btnIndex { display: none; }
+body:not(.entered) .actions { visibility: hidden; }
+
+/* ── index rail ── */
+#rail {
+  position: fixed; z-index: 15; left: var(--gap); top: 76px; bottom: 56px; width: 236px;
+  display: flex; flex-direction: column;
+  background: var(--glass); border: 1px solid var(--line); border-radius: 14px;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  opacity: 0; transform: translateX(-12px); pointer-events: none;
+  transition: opacity 0.5s 0.6s, transform 0.5s 0.6s;
+}
+body.entered #rail { opacity: 1; transform: none; pointer-events: auto; }
+#railList { overflow-y: auto; padding: 12px 10px 14px; scrollbar-width: thin; scrollbar-color: var(--mauve) transparent; }
+#rail section + section { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(224, 204, 248, 0.14); }
+#rail h3 { margin: 0 6px 2px; font: 13px var(--display); letter-spacing: 0.14em; text-transform: uppercase; color: #fff; display: flex; align-items: center; gap: 8px; }
+#rail .note { margin: 0 6px 8px; font-size: 12px; line-height: 1.35; color: var(--light); }
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; }
+.dot.r0 { background: var(--lighter); box-shadow: 0 0 10px var(--purple); }
+.dot.r1 { background: var(--light); }
+.dot.r2 { background: var(--teal); }
+.rail-item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 6px 8px; border: 1px solid transparent; border-radius: 9px; background: none;
+  text-align: left; font-size: 14px; color: var(--lighter);
+}
+.rail-item .g { width: 24px; height: 24px; flex: none; display: grid; place-items: center; border-radius: 6px; background: rgba(224, 204, 248, 0.1); color: var(--lighter); font-size: 13px; }
+.rail-item:hover { background: rgba(150, 121, 156, 0.35); }
+.rail-item.on { background: var(--lighter); color: var(--ink); border-color: var(--purple); }
+.rail-item.on .g { background: var(--ink); color: var(--lighter); }
+
+/* ── case panel ── */
+#panel {
+  position: fixed; z-index: 16; right: var(--gap); top: 76px; bottom: var(--gap); width: 440px;
+  background: linear-gradient(160deg, var(--lighter), var(--light));
+  color: var(--ink); border: 2px solid var(--purple); border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(50, 32, 54, 0.55);
+  transform: translateX(calc(100% + 40px)); transition: transform 0.55s cubic-bezier(0.2, 0.8, 0.2, 1);
+  display: flex; flex-direction: column;
+}
+body.panel-open #panel { transform: none; }
+#panelClose {
+  position: absolute; top: 12px; right: 12px; z-index: 1;
+  width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--purple);
+  background: var(--ink); color: var(--lighter); font-size: 15px;
+}
+#panelClose:hover { background: var(--mauve); }
+#panelBody { overflow-y: auto; padding: 26px 26px 20px; scrollbar-width: thin; scrollbar-color: var(--mauve) transparent; }
+#panelBody .kicker { margin: 0 44px 10px 0; font: 11px var(--display); letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink); opacity: 0.75; }
+#panelBody .kicker span { color: var(--purple); }
+#panelBody h2 { margin: 0 0 8px; font: 34px/1.1 var(--display); display: flex; align-items: center; gap: 12px; }
+#panelBody h2 .g { width: 46px; height: 46px; flex: none; display: grid; place-items: center; border-radius: 12px; background: var(--ink); color: var(--lighter); font: 24px var(--body); }
+#panelBody .tagline { font: 18px/1.35 var(--pixel); margin: 0 0 14px; }
+#panelBody p { margin: 0 0 12px; }
+#panelBody h3 { margin: 20px 0 8px; font: 12px var(--display); letter-spacing: 0.18em; text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
+#panelBody h3::after { content: ''; flex: 1; height: 1px; background: var(--purple); opacity: 0.5; }
+#panelBody .count { font-family: var(--body); letter-spacing: 0; background: var(--ink); color: var(--lighter); border-radius: 999px; padding: 1px 8px; }
+#panelBody .rel { font-size: 14px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-size: 13px; padding: 4px 10px; border-radius: 999px; background: var(--ink); color: var(--lighter); border: 1px solid var(--ink); }
+button.chip:hover, .rel .jump:hover { background: var(--mauve); border-color: var(--mauve); color: #fff; }
+.rel .jump { font-size: 13px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--purple); background: rgba(255, 255, 255, 0.4); color: var(--ink); }
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.tile { position: relative; padding: 0; aspect-ratio: 1; overflow: hidden; border-radius: 9px; border: 2px solid #fff; background: var(--ink); transition: border-color 0.2s, transform 0.2s; }
+.tile img, .tile video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tile:hover { border-color: var(--purple); transform: translateY(-2px); }
+.tile.vid::after { content: '►'; position: absolute; inset: auto 6px 6px auto; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; background: var(--ink); color: var(--lighter); font-size: 11px; }
+.links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+.btn { font: 14px var(--display); letter-spacing: 0.06em; text-decoration: none; padding: 9px 16px; border-radius: 999px; background: var(--mauve); color: #fff; border: 1px solid var(--purple); }
+.btn:hover { background: var(--ink); }
+.pn { display: flex; justify-content: space-between; gap: 8px; margin-top: 24px; padding-top: 14px; border-top: 1px solid rgba(155, 108, 216, 0.5); }
+.pn button { background: none; border: none; padding: 4px 0; font: 12px var(--display); letter-spacing: 0.06em; color: var(--ink); text-align: left; }
+.pn button + button { text-align: right; }
+.pn button:hover { color: var(--purple); }
+
+/* ── tooltip + hint ── */
+#tip {
+  position: fixed; left: 0; top: 0; z-index: 30; pointer-events: none; max-width: 260px;
+  padding: 8px 12px; border-radius: 10px; background: var(--ink); border: 1px solid var(--purple);
+  box-shadow: 0 8px 24px rgba(50, 32, 54, 0.5);
+}
+#tip b { display: block; font: 15px var(--display); color: #fff; }
+#tip span { display: block; font-size: 12px; color: var(--light); margin-top: 2px; }
+#hint {
+  position: fixed; z-index: 14; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 16px); transform: translateX(-50%);
+  font: 12px var(--display); letter-spacing: 0.1em; color: var(--ink); opacity: 0; white-space: nowrap;
+  padding: 7px 16px; border-radius: 999px; background: rgba(224, 204, 248, 0.9); border: 1px solid var(--line);
+  transition: opacity 0.5s 1.2s; pointer-events: none;
+}
+body.entered #hint { opacity: 0.85; }
+body.panel-open #hint { opacity: 0; transition-delay: 0s; }
+#hint .touch { display: none; }
+
+/* ── guided tour bar ── */
+#tour {
+  position: fixed; z-index: 18; left: calc(var(--gap) * 2 + 236px); right: var(--gap);
+  bottom: calc(env(safe-area-inset-bottom) + 14px);
+  display: none; justify-content: center; pointer-events: none;
+}
+body.touring #tour { display: flex; }
+body.touring #hint { display: none; }
+body.panel-open #tour { right: calc(var(--gap) * 2 + 440px); }
+.tour-inner {
+  pointer-events: auto; display: flex; align-items: center; gap: 6px; max-width: 100%;
+  padding: 6px; border-radius: 999px; background: var(--glass); border: 1px solid var(--line);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+#tour .pill { flex: none; padding: 7px 12px; }
+#tourStep { min-width: 0; padding: 0 8px; text-align: center; }
+#tourStep b { display: block; font: 15px var(--display); color: #fff; font-weight: normal; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#tourStep span { display: block; font-size: 12px; color: var(--light); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#btnTour.on { background: var(--lighter); color: var(--ink); }
+
+/* ── intro ── */
+#intro {
+  position: fixed; inset: 0; z-index: 50; overflow-y: auto;
+  display: grid; place-items: center; padding: 90px var(--gap) 40px;
+  background: radial-gradient(ellipse at 50% 45%, rgba(50, 32, 54, 0.88), rgba(50, 32, 54, 0.95) 75%);
+  transition: opacity 0.8s, visibility 0.8s;
+}
+body.entered #intro { opacity: 0; visibility: hidden; }
+.intro-card { max-width: 660px; text-align: center; }
+.intro-kicker { font: 14px var(--display); letter-spacing: 0.4em; color: var(--teal); margin: 0 0 8px; }
+#intro h1 { margin: 0; font: clamp(40px, 10vw, 104px)/0.95 var(--display); color: var(--lighter); letter-spacing: 0.04em; text-shadow: 0 0 30px var(--purple), 0 0 2px #fff; }
+#introRole { font: 20px/1.3 var(--pixel); color: #fff; margin: 14px 0 18px; }
+#introLines p { margin: 0 auto 10px; max-width: 560px; color: var(--lighter); }
+#introStats { display: flex; justify-content: center; gap: clamp(18px, 6vw, 48px); margin: 26px 0 22px; }
+#introStats div { display: flex; flex-direction: column; align-items: center; }
+#introStats b { font: 48px/1 var(--display); color: var(--teal); }
+#introStats span { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--light); margin-top: 6px; }
+#introRings { list-style: none; padding: 0; margin: 0 auto 26px; display: inline-flex; flex-direction: column; gap: 6px; text-align: left; font-size: 14px; color: var(--lighter); }
+#introRings li { display: flex; align-items: center; gap: 10px; }
+#introRings b { font-family: var(--display); font-weight: normal; color: #fff; letter-spacing: 0.06em; margin-right: 4px; }
+#enter {
+  display: inline-block; font: 18px var(--display); letter-spacing: 0.14em;
+  padding: 15px 34px; border-radius: 999px; border: 2px solid var(--purple);
+  background: linear-gradient(to bottom, var(--lighter), var(--light)); color: var(--ink);
+  box-shadow: 0 0 34px rgba(155, 108, 216, 0.6); transition: transform 0.2s, box-shadow 0.2s;
+}
+#enter:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 0 48px rgba(155, 108, 216, 0.85); }
+#enter:disabled { opacity: 0.6; cursor: progress; }
+#enter .loading { display: none; }
+body:not(.ready) #enter .go { display: none; }
+body:not(.ready) #enter .loading { display: inline; }
+.intro-how { margin-top: 14px; font: 12px var(--display); letter-spacing: 0.1em; color: var(--light); }
+#introLinks { margin: 22px 0 0; font: 13px var(--display); letter-spacing: 0.08em; }
+#introLinks a { color: var(--lighter); text-decoration: none; border-bottom: 1px solid var(--line); }
+#introLinks a:hover { color: var(--teal); }
+#introLinks span { color: var(--purple); margin: 0 10px; }
+.intro-verse { margin: 26px auto 0; max-width: 520px; font-size: 13px; color: var(--light); }
+
+/* ── lightbox ── */
+#lightbox { position: fixed; inset: 0; z-index: 100; display: none; background: rgba(50, 32, 54, 0.95); }
+body.lb-open #lightbox { display: block; }
+#lbStage { position: absolute; inset: 60px 70px 64px; display: grid; place-items: center; }
+#lbStage img, #lbStage video { max-width: 100%; max-height: 100%; border-radius: 8px; border: 2px solid var(--lighter); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4); }
+#lbCap { position: absolute; left: 0; right: 0; bottom: 20px; text-align: center; font: 14px var(--display); letter-spacing: 0.08em; color: var(--lighter); }
+#lightbox .lbb { position: absolute; width: 46px; height: 46px; border-radius: 50%; border: 1px solid var(--purple); background: var(--glass); color: var(--lighter); font-size: 16px; }
+#lightbox .lbb:hover { background: var(--mauve); }
+#lbClose { top: 14px; right: 14px; }
+#lbPrev { left: 14px; top: 50%; margin-top: -23px; }
+#lbNext { right: 14px; top: 50%; margin-top: -23px; }
+
+/* ── no WebGL: the index is the page ── */
+body.no-webgl #world { display: none; }
+body.no-webgl #rail { left: 50%; width: min(560px, calc(100vw - 2 * var(--gap))); transform: translateX(-50%); }
+body.no-webgl #btnOverview, body.no-webgl #hint { display: none; }
+body.no-webgl #tour { left: var(--gap); }
+
+/* ── phones ── */
+@media (max-width: 760px) {
+  :root { --gap: 12px; }
+  .brand span { display: none; }
+  #btnIndex { display: inline-block; }
+  #rail { top: 64px; bottom: 12px; left: var(--gap); right: var(--gap); width: auto; transform: translateY(-8px); transition: opacity 0.3s, transform 0.3s; }
+  body.entered #rail { opacity: 0; pointer-events: none; }
+  body.entered.rail-open #rail, body.no-webgl.entered #rail { opacity: 1; transform: none; pointer-events: auto; z-index: 25; }
+  body.no-webgl #rail { left: var(--gap); width: auto; }
+  #panel {
+    left: 0; right: 0; top: auto; bottom: 0; width: auto; height: 62vh; height: 62dvh;
+    border-radius: 18px 18px 0 0; border-bottom: none;
+    transform: translateY(calc(100% + 20px));
+  }
+  #panelBody { padding: 22px 18px calc(env(safe-area-inset-bottom) + 20px); }
+  #panelBody h2 { font-size: 28px; }
+  #hint .mouse { display: none; }
+  #hint .touch { display: inline; }
+  .actions { gap: 6px; }
+  .pill { padding: 6px 10px; font-size: 12px; }
+  #tour { left: var(--gap); right: var(--gap); }
+  body.panel-open #tour { right: var(--gap); bottom: calc(62vh + 10px); bottom: calc(62dvh + 10px); }
+  #lbStage { inset: 60px 12px 64px; }
+  #lbPrev, #lbNext { top: auto; bottom: 10px; margin: 0; }
+  #lbPrev { left: 12px; } #lbNext { right: 12px; }
+  #introStats b { font-size: 38px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.01ms !important; transition-delay: 0s !important; }
+}
+</style>
+</head>
+<body>
+<canvas id="world" aria-label="Explorable 3D map" tabindex="-1"></canvas>
+
+<header class="topbar">
+  <a class="brand" href="./" id="brand"><b>✟ ISLANDS</b><span>WORLD</span></a>
+  <div class="actions">
+    <button class="pill" id="btnIndex">INDEX</button>
+    <button class="pill" id="btnTour">TOUR</button>
+    <button class="pill" id="btnOverview">MAP</button>
+    <button class="pill" id="btnAbout">ABOUT</button>
+  </div>
+</header>
+
+<aside id="rail" aria-label="Index of pages">
+  <div id="railList"></div>
+</aside>
+
+<aside id="panel" aria-hidden="true" aria-live="polite">
+  <button id="panelClose" aria-label="Close">✕</button>
+  <div id="panelBody"></div>
+</aside>
+
+<div id="tip" hidden></div>
+<div id="hint"><span class="mouse">DRAG TO TURN ◆ SCROLL TO ZOOM ◆ ◄ ► NEXT ISLAND ◆ CLICK AN ISLAND</span><span class="touch">DRAG TO TURN ◆ PINCH TO ZOOM ◆ SWIPE FOR NEXT ISLAND</span></div>
+
+<div id="tour" aria-live="polite">
+  <div class="tour-inner">
+    <button class="pill" id="tourPrev" aria-label="Previous stop">◄</button>
+    <div id="tourStep"></div>
+    <button class="pill" id="tourNext" aria-label="Next stop">►</button>
+    <button class="pill" id="tourAuto" aria-label="Pause tour">❚❚</button>
+    <button class="pill" id="tourEnd" aria-label="End tour">✕</button>
+  </div>
+</div>
+
+<section id="intro" aria-hidden="false">
+  <div class="intro-card">
+    <p class="intro-kicker" id="introKicker"></p>
+    <h1 id="introTitle"></h1>
+    <p id="introRole"></p>
+    <div id="introLines"></div>
+    <div id="introStats"></div>
+    <ul id="introRings"></ul>
+    <div>
+      <button id="enter" disabled><span class="go">ENTER THE WORLD ►</span><span class="loading">LOADING...</span></button>
+    </div>
+    <p class="intro-how">DRAG TO TURN THE VIEW ◆ SWIPE OR USE ◄ ► FOR THE NEXT ISLAND ◆ OR TAKE THE TOUR</p>
+    <p id="introLinks"></p>
+    <p class="intro-verse" id="introVerse"></p>
+  </div>
+</section>
+
+<div id="lightbox" role="dialog" aria-label="Viewer">
+  <div id="lbStage"></div>
+  <p id="lbCap"></p>
+  <button class="lbb" id="lbPrev" aria-label="Previous">◄</button>
+  <button class="lbb" id="lbNext" aria-label="Next">►</button>
+  <button class="lbb" id="lbClose" aria-label="Close">✕</button>
+</div>
+
+<script type="module" src="ui.js"></script>
+</body>
+</html>
